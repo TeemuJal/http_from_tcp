@@ -1,12 +1,11 @@
 package main
 
 import (
-	"errors"
 	"fmt"
-	"io"
+	"httpfromtcp/internal/request"
+	"log"
 	"net"
 	"os"
-	"strings"
 )
 
 const port = ":42069"
@@ -14,7 +13,7 @@ const port = ":42069"
 func main() {
 	listener, err := net.Listen("tcp", port)
 	if err != nil {
-		fmt.Println("failed to listen:", err.Error())
+		fmt.Println("Failed to listen:", err.Error())
 		os.Exit(1)
 	}
 	defer listener.Close()
@@ -23,48 +22,18 @@ func main() {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			fmt.Println("failed to accept conn:", err.Error())
+			fmt.Println("Failed to accept conn:", err.Error())
       break
 		}
     fmt.Println("Connection has been accepted from", conn.RemoteAddr())
-		linesChannel := getLinesChannel(conn)
-
-		for line := range linesChannel {
-			fmt.Println(line)
-		}
-    fmt.Println("connection to", conn.RemoteAddr(), "has been closed")
+    request, err := request.RequestFromReader(conn)
+    if err != nil {
+      log.Fatalln("Failed to read from connection:", err.Error())
+    }
+    fmt.Println("Request line:")
+    fmt.Println("- Method:", request.RequestLine.Method)
+    fmt.Println("- Target:", request.RequestLine.RequestTarget)
+    fmt.Println("- Version:", request.RequestLine.HttpVersion)
+    fmt.Println("Connection to", conn.RemoteAddr(), "has been closed")
 	}
-}
-
-func getLinesChannel(conn io.ReadCloser) <-chan string {
-	linesChannel := make(chan string)
-
-	go func() {
-		defer close(linesChannel)
-		currentLine := ""
-		for {
-			buffer := make([]byte, 8)
-			n, err := conn.Read(buffer)
-			if err != nil {
-				if currentLine != "" {
-					linesChannel <- currentLine
-				}
-				if errors.Is(err, io.EOF) {
-					break
-				}
-				fmt.Println("failed to read:", err.Error())
-				break
-			}
-			str := string(buffer[:n])
-			parts := strings.Split(str, "\n")
-			if len(parts) > 1 {
-				for _, part := range parts[:len(parts)-1] {
-					linesChannel <- fmt.Sprintf("%s%s", currentLine, part)
-					currentLine = ""
-				}
-			}
-			currentLine += parts[len(parts)-1]
-		}
-	}()
-	return linesChannel
 }
