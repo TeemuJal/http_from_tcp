@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"httpfromtcp/internal/headers"
 	"io"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -15,12 +16,14 @@ type RequestState int
 const (
 	request_initialized RequestState = iota
 	request_parsing_headers
+	request_parsing_body
 	request_done
 )
 
 type Request struct {
 	RequestLine RequestLine
 	Headers     headers.Headers
+	Body        []byte
 	State       RequestState
 }
 
@@ -34,7 +37,11 @@ const crlf = "\r\n"
 const buffer_size = 8
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
-	request := Request{State: request_initialized, Headers: headers.NewHeaders()}
+	request := Request{
+		State:   request_initialized,
+		Headers: headers.NewHeaders(),
+		Body:    make([]byte, 0),
+	}
 	read_to_idx := 0
 	buf := make([]byte, buffer_size)
 
@@ -99,9 +106,27 @@ func (r *Request) parseSingle(data []byte) (int, error) {
 			return 0, err
 		}
 		if done {
-			r.State = request_done
+			r.State = request_parsing_body
 		}
 		return bytes_parsed, nil
+	case request_parsing_body:
+		content_length_header, ok := r.Headers.Get("Content-Length")
+		if !ok {
+			r.State = request_done
+			return len(data), nil
+		}
+		r.Body = append(r.Body, data...)
+		content_length, err := strconv.Atoi(content_length_header)
+		if err != nil {
+			return 0, fmt.Errorf("couldn't convert %s to int", content_length_header)
+		}
+		if len(r.Body) > content_length {
+			return 0, fmt.Errorf("length of the body greater than content-length header")
+		}
+		if len(r.Body) == content_length {
+			r.State = request_done
+		}
+		return len(data), nil
 	case request_done:
 		return 0, fmt.Errorf("error: parsing when request is done")
 	default:
