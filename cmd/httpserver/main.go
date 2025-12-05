@@ -73,6 +73,22 @@ func handle200(w *response.Writer) {
 	w.WriteBody([]byte(status_200_html))
 }
 
+func handleVideo(w *response.Writer) {
+  fileName := "assets/vim.mp4"
+  video, err := os.ReadFile(fileName)
+  if err != nil {
+		fmt.Println("failed to read file:", fileName)
+    handle500(w)
+    return
+  }
+	w.WriteStatusLine(response.Status200)
+	headers := response.GetDefaultHeaders(len(video))
+	headers.Override("Content-Type", "video/mp4")
+	w.WriteHeaders(headers)
+	w.WriteBody(video)
+}
+
+
 func handleProxy(w *response.Writer, target string) {
 	resp, err := http.Get("https://httpbin.org" + target)
 	if err != nil {
@@ -126,6 +142,10 @@ func handler(w *response.Writer, req *request.Request) {
   }
   if reqTarget == "/myproblem" {
 		handle500(w)
+    return
+  }
+  if reqTarget == "/video" {
+		handleVideo(w)
     return
   }
   handle200(w)
