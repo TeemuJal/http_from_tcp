@@ -63,3 +63,7 @@ func (h Headers) Get(key string) (string, bool) {
 func (h Headers) Override(key, val string) {
   h[key] = val
 }
+
+func (h Headers) Delete(key string) {
+  delete(h, key)
+}

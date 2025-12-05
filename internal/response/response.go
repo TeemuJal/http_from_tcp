@@ -60,10 +60,7 @@ func GetDefaultHeaders(contentLen int) headers.Headers {
 	return headers
 }
 
-func (w *Writer) WriteHeaders(headers headers.Headers) error {
-  if w.writerState != writerStatusLineWritten {
-    return fmt.Errorf("error: writing headers in state %d", w.writerState)
-  }
+func (w *Writer) writeHeaders(headers headers.Headers) error {
 	for key, val := range headers {
 		_, err := fmt.Fprintf(w.writer, "%s: %s\r\n", key, val)
 		if err != nil {
@@ -71,7 +68,27 @@ func (w *Writer) WriteHeaders(headers headers.Headers) error {
 		}
 	}
   _, err := w.writer.Write([]byte("\r\n"))
+  return err
+}
+
+func (w *Writer) WriteHeaders(headers headers.Headers) error {
+  if w.writerState != writerStatusLineWritten {
+    return fmt.Errorf("error: writing headers in state %d", w.writerState)
+  }
+  err := w.writeHeaders(headers)
   w.writerState = writerHeadersWritten
+  return err
+}
+
+func (w *Writer) WriteTrailers(trailers headers.Headers) error {
+  if w.writerState != writerBodyWritten {
+    return fmt.Errorf("error: writing trailers in state %d", w.writerState)
+  }
+  err := w.writeHeaders(trailers)
+  if err != nil {
+    return err
+  }
+  _, err = w.writer.Write([]byte("\r\n"))
   return err
 }
 
@@ -81,4 +98,38 @@ func (w *Writer) WriteBody(p []byte) (int, error) {
   }
   w.writerState = writerBodyWritten
   return w.writer.Write(p)
+}
+
+func (w *Writer) WriteChunkedBody(p []byte) (int, error) {
+  if w.writerState != writerHeadersWritten {
+    return 0, fmt.Errorf("error: writing body in state %d", w.writerState)
+  }
+  chunkSizeHex := fmt.Sprintf("%X", len(p))
+  nTotal := 0
+  n, err := w.writer.Write([]byte(chunkSizeHex + "\r\n"))
+  if err != nil {
+    return nTotal, err
+  }
+  nTotal += n
+
+  n, err = w.writer.Write(p)
+  if err != nil {
+    return nTotal, err
+  }
+  nTotal += n
+
+  n, err = w.writer.Write([]byte("\r\n"))
+  if err != nil {
+    return nTotal, err
+  }
+  nTotal += n
+  return nTotal, nil
+}
+func (w *Writer) WriteChunkedBodyDone() (int, error) {
+  if w.writerState != writerHeadersWritten {
+    return 0, fmt.Errorf("error: writing body in state %d", w.writerState)
+  }
+  n, err := w.writer.Write([]byte("0\r\n"))
+  w.writerState = writerBodyWritten
+  return n, err
 }
